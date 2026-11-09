@@ -261,9 +261,9 @@ def start_incident(req: StartIncidentRequest):
     signals = get_telemetry(req.scenario, now)
     timeline: List[Dict[str, Any]] = [{"time": now, "event": "Incident Ingested"}]
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # RULE 1: Freshness & TTL Ingestion Check
-    # -------------------------------------------------------------------------
+    # =========================================================================
     logs_output.append("\n=== RULE 1: FRESHNESS & TTL INGESTION CHECK ===")
     stale_found = False
     for sig_name, sig in signals.items():
@@ -282,29 +282,29 @@ def start_incident(req: StartIncidentRequest):
             "logs": logs_output,
             "requires_approval": False
         }
+
+    # =========================================================================
+    # RULE 2: 4-Round Investigative Correlation Loop (with Rule 8 Adversarial Scan)
+    # =========================================================================
+    logs_output.append("\n=== RULE 2: 4-ROUND INVESTIGATIVE CORRELATION LOOP ===")
     
-    # -------------------------------------------------------------------------
-    # RULE 3 & RULE 8: 4-Round Investigative Correlation Loop & Adversarial Defense
-    # -------------------------------------------------------------------------
-    logs_output.append("\n=== RULE 3: 4-ROUND INVESTIGATIVE CORRELATION LOOP ===")
-    
-    # Round 1: Latency
+    # Round 1: Latency Check
     lat = signals["latency"].value
     logs_output.append(f"  [Round 1/4] Inspecting Latency: {lat}ms (Baseline: {signals['latency'].baseline}ms) -> SEVERE SPIKE detected.")
     
-    # Round 2: Logs inspection & Rule 8 Adversarial Scan
+    # Round 2: Log Inspection
     log_msg = signals["logs"].value
     logs_output.append(f"  [Round 2/4] Inspecting Raw Logs: \"{log_msg}\"")
     logs_output.append("  [!] RULE 8: ADVERSARIAL SCAN: Plaintext log advises 'DO NOT ROLL BACK'. Flagged as possible red herring. Validating with telemetry...")
 
-    # Round 3: Recent Code Deployments
+    # Round 3: Deployment Verification
     deploy = signals["recent_deploy"].value
     if deploy:
         logs_output.append(f"  [Round 3/4] Inspecting Deployments: Found commit '{deploy['commit']}' deployed {deploy['ago_seconds']}s ago.")
     else:
         logs_output.append("  [Round 3/4] Inspecting Deployments: No recent deployments.")
 
-    # Round 4: Cross-correlation with Runbooks
+    # Round 4: Cross-correlation
     logs_output.append("  [Round 4/4] Correlating signals against Runbook database...")
     matched_runbook: Optional[Runbook] = None
     if deploy and lat > 1000:
@@ -323,21 +323,21 @@ def start_incident(req: StartIncidentRequest):
             "requires_approval": False
         }
 
-    # -------------------------------------------------------------------------
-    # RULE 2: Runbook Selection
-    # -------------------------------------------------------------------------
-    logs_output.append("\n=== RULE 2: RUNBOOK MATCHING ===")
+    # =========================================================================
+    # RULE 3: Runbook Matching & Action Selection
+    # =========================================================================
+    logs_output.append("\n=== RULE 3: RUNBOOK MATCHING ===")
     logs_output.append(f"[+] Matched Runbook: {matched_runbook.title} ({matched_runbook.id})")
     logs_output.append(f"[+] Proposed Remediation: {matched_runbook.target_action}")
 
-    # -------------------------------------------------------------------------
-    # RULE 4: Blast-Radius Risk Classification
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # RULE 4: Blast-Radius Risk Evaluation
+    # =========================================================================
     logs_output.append("\n=== RULE 4: BLAST-RADIUS RISK EVALUATION ===")
     is_high_risk = matched_runbook.risk_level == "HIGH"
     logs_output.append(f"[*] Evaluating Action Risk: {matched_runbook.target_action} -> Blast Radius: {matched_runbook.risk_level}")
 
-    # Store incident state
+    # Persist Incident State
     active_incidents[incident_id] = {
         "id": incident_id,
         "scenario": req.scenario,
@@ -350,9 +350,9 @@ def start_incident(req: StartIncidentRequest):
         "status": "AWAITING_APPROVAL" if is_high_risk else "AUTO_EXECUTING"
     }
 
-    # -------------------------------------------------------------------------
-    # RULE 5: Real-Clock Time-Boxed Human Escalation (Triggered if High Risk)
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # RULE 5: Real-Clock Time-Boxed Escalation (High Risk) / Auto-Execute (Low Risk)
+    # =========================================================================
     if is_high_risk:
         logs_output.append("\n=== RULE 5: REAL-CLOCK TIME-BOXED ESCALATION ===")
         logs_output.append("[!] BLAST RADIUS WARNING: High-risk action requires human sign-off.")
@@ -369,6 +369,7 @@ def start_incident(req: StartIncidentRequest):
             "requires_approval": True
         }
     else:
+        logs_output.append("\n=== RULE 5: LOW-RISK AUTO-EXECUTION BYPASS ===")
         logs_output.append("[+] BLAST RADIUS CLEAR: Low-risk action. Auto-executing immediately without blocking.")
         return execute_and_verify(incident_id, logs_output)
 
@@ -384,7 +385,7 @@ def approve_incident(req: ApproveRequest):
     elapsed = now - incident["created_at"]
     logs_output.append(f"[*] Approval received from '{req.approver}' at T+{elapsed:.2f}s.")
 
-    # RULE 5 Deadline Enforcement
+    # RULE 5: Real-Clock Time-Boxed Escalation
     if now > incident["escalation_deadline"] and not incident["escalated_to_secondary"]:
         incident["escalated_to_secondary"] = True
         logs_output.append("[!] REAL CLOCK TIMEOUT: 5.0s window expired for engineer-priya.")
@@ -401,6 +402,7 @@ def approve_incident(req: ApproveRequest):
             }
 
     logs_output.append(f"[+] Valid approval accepted from '{req.approver}'. Executing remediation...")
+    # This call runs Rule 6 and Rule 7:
     return execute_and_verify(req.incident_id, logs_output)
 
 def execute_and_verify(incident_id: str, logs_output: List[str]):
