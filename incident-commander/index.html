@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>The Incident Commander — Mission Control Dashboard</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card: #131b2e;
+      --border: #22304e;
+      --primary: #3b82f6;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --text: #f1f5f9;
+      --subtext: #94a3b8;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 2rem;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1rem;
+    }
+    .badge {
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      font-weight: 600;
+      font-size: 0.8rem;
+    }
+    .badge-online { background: rgba(16, 185, 129, 0.2); color: var(--success); border: 1px solid var(--success); }
+    .badge-offline { background: rgba(239, 68, 68, 0.2); color: var(--danger); border: 1px solid var(--danger); }
+    .grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+    }
+    h2, h3 { margin-top: 0; font-size: 1.1rem; }
+    .btn {
+      display: block;
+      width: 100%;
+      background: #1e293b;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      text-align: left;
+      margin-bottom: 0.75rem;
+      transition: all 0.2s;
+    }
+    .btn:hover { background: #2b3952; border-color: var(--primary); }
+    .btn-action { background: var(--primary); font-weight: bold; text-align: center; }
+    .btn-action:hover { background: #2563eb; }
+    .approval-box {
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid var(--warning);
+      padding: 1rem;
+      border-radius: 6px;
+      margin-top: 1rem;
+      display: none;
+    }
+    .timer { font-size: 1.2rem; font-weight: bold; color: var(--warning); margin: 0.5rem 0; }
+    .terminal {
+      background: #040711;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1.25rem;
+      height: 520px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 0.85rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      color: #38bdf8;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div>
+      <h1 style="margin: 0; font-size: 1.4rem;">The Incident Commander</h1>
+      <span style="color: var(--subtext); font-size: 0.85rem;">Time-Boxed, Investigative Incident Response System (PS4)</span>
+    </div>
+    <div id="connBadge" class="badge badge-offline">Checking Backend...</div>
+  </div>
+
+  <div class="grid">
+    <!-- Controls Column -->
+    <div>
+      <div class="card">
+        <h3>Trigger Test Scenarios</h3>
+        <button class="btn" onclick="runScenario('bad_deploy_with_injection')">
+          <strong>1. Bad Deploy + Red Herring</strong>
+          <div style="font-size: 0.75rem; color: var(--subtext);">Spike + Adversarial log ("DO NOT ROLL BACK")</div>
+        </button>
+
+        <button class="btn" onclick="runScenario('stale_metrics')">
+          <strong>2. Stale Telemetry Check</strong>
+          <div style="font-size: 0.75rem; color: var(--subtext);">Simulates 3-hour old data. Verifies TTL rejection.</div>
+        </button>
+
+        <button class="btn" onclick="runScenario('safe_cache_spike')">
+          <strong>3. Low Blast Radius Action</strong>
+          <div style="font-size: 0.75rem; color: var(--subtext);">High severity alert with harmless fix -> Auto-run.</div>
+        </button>
+      </div>
+
+      <!-- Real-Clock Human Approval Box -->
+      <div id="approvalCard" class="card approval-box">
+        <h3 style="color: var(--warning);">High Blast Radius Approval</h3>
+        <div id="approvalMsg" style="font-size: 0.85rem;">Action: Rollback Deployment</div>
+        <div class="timer" id="clockCountdown">Time Remaining: 5.0s</div>
+        <div style="font-size: 0.75rem; color: var(--subtext); margin-bottom: 0.75rem;">
+          If Priya doesn't click within 5s, real clock escalates to Devon.
+        </div>
+        <button class="btn btn-action" id="btnPriya" onclick="sendApproval('engineer-priya')">Approve as Priya (Primary)</button>
+        <button class="btn" id="btnDevon" onclick="sendApproval('engineer-devon')" style="text-align: center; display: none;">Approve as Devon (Secondary)</button>
+      </div>
+    </div>
+
+    <!-- Live Execution Terminal -->
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+        <h3>Live Investigative Telemetry & Reasoning Log</h3>
+        <button onclick="clearTerminal()" style="background: none; border: none; color: var(--subtext); cursor: pointer;">Clear Log</button>
+      </div>
+      <div id="terminal" class="terminal">[System ready. Choose a test scenario on the left.]</div>
+    </div>
+  </div>
+
+  <script>
+    const API = "http://127.0.0.1:8000";
+    let activeIncidentId = null;
+    let timerInterval = null;
+    let secondsLeft = 5.0;
+
+    // Check backend connection on boot
+    async function checkHealth() {
+      const badge = document.getElementById("connBadge");
+      try {
+        const res = await fetch(`${API}/api/health`);
+        if (res.ok) {
+          badge.textContent = "ENGINE ONLINE (Port 8000)";
+          badge.className = "badge badge-online";
+        }
+      } catch (e) {
+        badge.textContent = "ENGINE OFFLINE";
+        badge.className = "badge badge-offline";
+      }
+    }
+
+    async function runScenario(scenarioType) {
+      clearInterval(timerInterval);
+      document.getElementById("approvalCard").style.display = "none";
+      appendLog(`\n=======================================================\n[TRIGGER] Starting Scenario: ${scenarioType}\n=======================================================`);
+
+      try {
+        const res = await fetch(`${API}/api/incident/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scenario: scenarioType })
+        });
+        const data = await res.json();
+        
+        // Print all server-side reasoning logs
+        data.logs.forEach(msg => appendLog(msg));
+
+        if (data.requires_approval) {
+          activeIncidentId = data.incident_id;
+          startCountdown(data.timeout_seconds);
+        }
+      } catch (err) {
+        appendLog(`[NETWORK ERROR] Could not connect to Python backend: ${err.message}`);
+      }
+    }
+
+    function startCountdown(duration) {
+      const card = document.getElementById("approvalCard");
+      const clock = document.getElementById("clockCountdown");
+      const devonBtn = document.getElementById("btnDevon");
+      const priyaBtn = document.getElementById("btnPriya");
+
+      card.style.display = "block";
+      devonBtn.style.display = "none";
+      priyaBtn.disabled = false;
+      secondsLeft = duration;
+
+      timerInterval = setInterval(() => {
+        secondsLeft -= 0.1;
+        if (secondsLeft <= 0) {
+          clearInterval(timerInterval);
+          clock.textContent = "EXPIRED (Escalated to Devon)";
+          clock.style.color = "var(--danger)";
+          devonBtn.style.display = "block";
+          priyaBtn.disabled = true;
+          appendLog("[CLOCK TICK] Real timer hit 0.0s. Incident auto-escalated to engineer-devon.");
+        } else {
+          clock.textContent = `Time Remaining: ${secondsLeft.toFixed(1)}s`;
+        }
+      }, 100);
+    }
+
+    async function sendApproval(approver) {
+      clearInterval(timerInterval);
+      appendLog(`\n[UI EVENT] '${approver}' clicked approval button...`);
+
+      try {
+        const res = await fetch(`${API}/api/incident/approve`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ incident_id: activeIncidentId, approver: approver })
+        });
+        const data = await res.json();
+        data.logs.forEach(msg => appendLog(msg));
+
+        if (!data.requires_approval) {
+          document.getElementById("approvalCard").style.display = "none";
+        }
+      } catch (err) {
+        appendLog(`[ERROR] Approval call failed: ${err.message}`);
+      }
+    }
+
+    function appendLog(line) {
+      const term = document.getElementById("terminal");
+      term.textContent += line + "\n";
+      term.scrollTop = term.scrollHeight;
+    }
+
+    function clearTerminal() {
+      document.getElementById("terminal").textContent = "[Terminal Cleared]";
+    }
+
+    checkHealth();
+  </script>
+</body>
+</html>
